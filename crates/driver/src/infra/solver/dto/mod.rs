@@ -1,8 +1,8 @@
 //! DTOs modeling the HTTP REST interface of the solver.
 
-mod auction;
-mod notification;
-mod solution;
+pub mod auction;
+pub mod notification;
+pub mod solution;
 
 pub use {auction::Auction, notification::Notification, solution::Solutions};
 
