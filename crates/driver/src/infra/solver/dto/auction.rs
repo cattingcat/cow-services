@@ -322,14 +322,9 @@ pub enum Liquidity {
 #[serde(rename_all = "camelCase")]
 pub struct ConstantProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-<<<<<<< HEAD
-    id: usize,
-    address: eth::H160,
-    router: eth::H160,
-=======
     pub id: usize,
     pub address: eth::H160,
->>>>>>> b364f9b0 (chore: export DTOs for solver)
+    pub router: eth::H160,
     #[serde_as(as = "serialize::U256")]
     pub gas_estimate: eth::U256,
     pub tokens: BTreeMap<eth::H160, ConstantProductReserve>,
@@ -349,14 +344,9 @@ pub struct ConstantProductReserve {
 #[serde(rename_all = "camelCase")]
 pub struct WeightedProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-<<<<<<< HEAD
-    id: usize,
-    address: eth::H160,
-    balancer_pool_id: eth::H256,
-=======
     pub id: usize,
     pub address: eth::H160,
->>>>>>> b364f9b0 (chore: export DTOs for solver)
+    pub balancer_pool_id: eth::H256,
     #[serde_as(as = "serialize::U256")]
     pub gas_estimate: eth::U256,
     pub tokens: IndexMap<eth::H160, WeightedProductReserve>,
@@ -389,14 +379,9 @@ pub enum WeightedProductVersion {
 #[serde(rename_all = "camelCase")]
 pub struct StablePool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-<<<<<<< HEAD
-    id: usize,
-    address: eth::H160,
-    balancer_pool_id: eth::H256,
-=======
     pub id: usize,
     pub address: eth::H160,
->>>>>>> b364f9b0 (chore: export DTOs for solver)
+    pub balancer_pool_id: eth::H256,
     #[serde_as(as = "serialize::U256")]
     pub gas_estimate: eth::U256,
     pub tokens: IndexMap<eth::H160, StableReserve>,
@@ -421,14 +406,9 @@ pub struct StableReserve {
 #[serde(rename_all = "camelCase")]
 pub struct ConcentratedLiquidityPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-<<<<<<< HEAD
-    id: usize,
-    address: eth::H160,
-    router: eth::H160,
-=======
     pub id: usize,
     pub address: eth::H160,
->>>>>>> b364f9b0 (chore: export DTOs for solver)
+    pub router: eth::H160,
     #[serde_as(as = "serialize::U256")]
     pub gas_estimate: eth::U256,
     pub tokens: Vec<eth::H160>,
