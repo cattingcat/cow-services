@@ -56,13 +56,17 @@ async fn order_cancellation(web3: Web3) {
             account: solver,
             endpoint: solver_endpoint,
         }],
+        colocation::LiquidityProvider::UniswapV2,
     );
-    services.start_autopilot(
-        None,
-        vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ],
-    );
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
@@ -95,7 +99,7 @@ async fn order_cancellation(web3: Web3) {
                 kind: quote.kind,
                 sell_token: quote.sell_token,
                 sell_amount: quote.sell_amount,
-                fee_amount: quote.fee_amount,
+                fee_amount: 0.into(),
                 buy_token: quote.buy_token,
                 buy_amount: (quote.buy_amount * 99) / 100,
                 valid_to: quote.valid_to,

@@ -326,9 +326,13 @@ pub async fn run(args: Arguments) {
             .clone()
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
+        let graph_url = args
+            .shared
+            .balancer_v2_graph_url
+            .as_ref()
+            .expect("provide a balancer subgraph url when enabling balancer liquidity");
         match BalancerPoolFetcher::new(
-            &args.shared.graph_api_base_url,
-            chain_id,
+            graph_url,
             block_retriever.clone(),
             token_info_fetcher.clone(),
             cache_config,
@@ -355,9 +359,13 @@ pub async fn run(args: Arguments) {
         None
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        let graph_url = args
+            .shared
+            .uniswap_v3_graph_url
+            .as_ref()
+            .expect("provide a uniswapV3 subgraph url when enabling uniswapV3 liquidity");
         match UniswapV3PoolFetcher::new(
-            &args.shared.graph_api_base_url,
-            chain_id,
+            graph_url,
             web3.clone(),
             http_factory.create(),
             block_retriever,
@@ -506,7 +514,6 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
-            args.shared.market_orders_deprecation_date,
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(
@@ -534,7 +541,6 @@ pub async fn run(args: Arguments) {
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
 
-    let block = eth.current_block().borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         persistence.clone(),
@@ -552,12 +558,12 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFee::new(args.fee_policy.clone()),
+        domain::ProtocolFees::new(
+            &args.fee_policies,
+            args.fee_policy_max_partner_fee,
+            args.protocol_fee_exempt_addresses.as_slice(),
+        ),
     );
-    solvable_orders_cache
-        .update(block)
-        .await
-        .expect("failed to perform initial solvable orders update");
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
@@ -597,7 +603,6 @@ pub async fn run(args: Arguments) {
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
         additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
-        score_cap: args.score_cap,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
@@ -660,7 +665,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         orderbook,
         drivers,
         trusted_tokens,
-        args.score_cap,
         args.solve_deadline,
         liveness.clone(),
     );

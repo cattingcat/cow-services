@@ -13,9 +13,17 @@ use {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub auction_id: Option<i64>,
-    pub solution_id: Option<u64>,
+    pub solution_id: Option<SolutionId>,
     #[serde(flatten)]
     pub kind: Kind,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum SolutionId {
+    Single(u64),
+    Merged(Vec<u64>),
 }
 
 #[serde_as]
@@ -31,23 +39,7 @@ pub enum Kind {
         tx: Tx,
         succeeded_once: bool,
     },
-    ZeroScore,
-    ScoreHigherThanQuality {
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
-    },
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ObjectiveValueNonPositive {
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        gas_cost: U256,
-    },
+    InvalidClearingPrices,
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
     },

@@ -21,7 +21,7 @@ impl Notification {
     ) -> Self {
         Self {
             auction_id: auction_id.as_ref().map(ToString::to_string),
-            solution_id: solution_id.map(|id| id.0),
+            solution_id: solution_id.map(SolutionId::from_domain),
             kind: match kind {
                 notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
@@ -38,26 +38,9 @@ impl Notification {
                         succeeded_once,
                     }
                 }
-                notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => Kind::ZeroScore,
-                notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanQuality(
-                    score,
-                    quality,
-                )) => Kind::ScoreHigherThanQuality {
-                    score: score.0.get(),
-                    quality: quality.0,
-                },
-                notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
-                    success_probability,
-                )) => Kind::SuccessProbabilityOutOfRange {
-                    probability: success_probability,
-                },
-                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive(
-                    quality,
-                    gas_cost,
-                )) => Kind::ObjectiveValueNonPositive {
-                    quality: quality.0,
-                    gas_cost: gas_cost.get().0,
-                },
+                notify::Kind::ScoringFailed(notify::ScoreKind::InvalidClearingPrices) => {
+                    Kind::InvalidClearingPrices
+                }
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
                 },
@@ -89,9 +72,26 @@ impl Notification {
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     auction_id: Option<String>,
-    solution_id: Option<u64>,
+    solution_id: Option<SolutionId>,
     #[serde(flatten)]
     kind: Kind,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum SolutionId {
+    Single(u64),
+    Merged(Vec<u64>),
+}
+
+impl SolutionId {
+    pub fn from_domain(id: solution::Id) -> Self {
+        match id {
+            solution::Id::Single(id) => SolutionId::Single(id),
+            solution::Id::Merged(ids) => SolutionId::Merged(ids),
+        }
+    }
 }
 
 #[serde_as]
@@ -107,23 +107,7 @@ pub enum Kind {
         tx: Tx,
         succeeded_once: bool,
     },
-    ZeroScore,
-    ScoreHigherThanQuality {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
-    },
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ObjectiveValueNonPositive {
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        gas_cost: eth::U256,
-    },
+    InvalidClearingPrices,
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
     },

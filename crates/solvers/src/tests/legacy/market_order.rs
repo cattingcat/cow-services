@@ -151,6 +151,7 @@ async fn quote() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -205,10 +206,6 @@ async fn quote() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 1.0,
-                }
             }]
         }),
     );
@@ -358,6 +355,7 @@ async fn solve() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -412,10 +410,6 @@ async fn solve() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 1.0,
-                }
             }]
         }),
     );

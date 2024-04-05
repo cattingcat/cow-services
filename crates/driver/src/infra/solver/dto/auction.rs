@@ -4,11 +4,12 @@ use {
             competition,
             competition::{
                 order,
-                order::{FeePolicy, Side},
+                order::{fees, Side},
             },
             eth,
             liquidity,
         },
+        infra::config::file::FeeHandler,
         util::{
             conv::{rational_to_big_decimal, u256::U256Ext},
             serialize,
@@ -25,6 +26,7 @@ impl Auction {
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
+        fee_handler: FeeHandler,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -55,7 +57,12 @@ impl Auction {
                 liquidity::Kind::Swapr(pool) => {
                     pool.base.reserves.iter().map(|r| r.token).collect()
                 }
-                liquidity::Kind::ZeroEx(_) => todo!(),
+                liquidity::Kind::ZeroEx(limit_order) => {
+                    vec![
+                        limit_order.order.maker_token.into(),
+                        limit_order.order.taker_token.into(),
+                    ]
+                }
             })
         {
             tokens.entry(token.into()).or_insert_with(Default::default);
@@ -68,31 +75,35 @@ impl Auction {
                 .iter()
                 .map(|order| {
                     let mut available = order.available(weth);
-                    // Solvers are unaware of the protocol fees. In case of volume based fees,
-                    // fee withheld by driver might be higher than the surplus of the solution. This
-                    // would lead to violating limit prices when driver tries to withhold the
-                    // volume based fee. To avoid this, we artifically adjust the order limit
-                    // amounts (make then worse) before sending to solvers, to force solvers to only
-                    // submit solutions with enough surplus to cover the fee.
+                    // In case of volume based fees, fee withheld by driver might be higher than the
+                    // surplus of the solution. This would lead to violating limit prices when
+                    // driver tries to withhold the volume based fee. To avoid this, we artificially
+                    // adjust the order limit amounts (make then worse) before sending to solvers,
+                    // to force solvers to only submit solutions with enough surplus to cover the
+                    // fee.
                     //
                     // https://github.com/cowprotocol/services/issues/2440
-                    if let Some(FeePolicy::Volume { factor }) = order.protocol_fees.first() {
-                        match order.side {
-                            Side::Buy => {
-                                // reduce sell amount by factor
-                                available.sell.amount = available
-                                    .sell
-                                    .amount
-                                    .apply_factor(1.0 / (1.0 + factor))
-                                    .unwrap_or_default();
-                            }
-                            Side::Sell => {
-                                // increase buy amount by factor
-                                available.buy.amount = available
-                                    .buy
-                                    .amount
-                                    .apply_factor(1.0 / (1.0 - factor))
-                                    .unwrap_or_default();
+                    if fee_handler == FeeHandler::Driver {
+                        if let Some(fees::FeePolicy::Volume { factor }) =
+                            order.protocol_fees.first()
+                        {
+                            match order.side {
+                                Side::Buy => {
+                                    // reduce sell amount by factor
+                                    available.sell.amount = available
+                                        .sell
+                                        .amount
+                                        .apply_factor(1.0 / (1.0 + factor))
+                                        .unwrap_or_default();
+                                }
+                                Side::Sell => {
+                                    // increase buy amount by factor
+                                    available.buy.amount = available
+                                        .buy
+                                        .amount
+                                        .apply_factor(1.0 / (1.0 - factor))
+                                        .unwrap_or_default();
+                                }
                             }
                         }
                     }
@@ -113,6 +124,14 @@ impl Auction {
                             competition::order::Kind::Limit { .. } => Class::Limit,
                             competition::order::Kind::Liquidity => Class::Liquidity,
                         },
+                        fee_policies: (fee_handler == FeeHandler::Solver).then_some(
+                            order
+                                .protocol_fees
+                                .iter()
+                                .cloned()
+                                .map(Into::into)
+                                .collect(),
+                        ),
                     }
                 })
                 .collect(),
@@ -235,7 +254,19 @@ impl Auction {
                             fee: bigdecimal::BigDecimal::new(pool.fee.bps().into(), 4),
                         })
                     }
-                    liquidity::Kind::ZeroEx(_) => todo!(),
+                    liquidity::Kind::ZeroEx(limit_order) => {
+                        Liquidity::LimitOrder(ForeignLimitOrder {
+                            id: liquidity.id.0,
+                            address: limit_order.zeroex.address(),
+                            gas_estimate: liquidity.gas.into(),
+                            hash: Default::default(),
+                            maker_token: limit_order.order.maker_token,
+                            taker_token: limit_order.order.taker_token,
+                            maker_amount: limit_order.order.maker_amount.into(),
+                            taker_amount: limit_order.order.taker_amount.into(),
+                            taker_token_fee_amount: limit_order.order.taker_token_fee_amount.into(),
+                        })
+                    }
                 })
                 .collect(),
             tokens,
@@ -275,6 +306,8 @@ pub struct Order {
     pub kind: Kind,
     pub partially_fillable: bool,
     pub class: Class,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee_policies: Option<Vec<FeePolicy>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -290,6 +323,62 @@ pub enum Class {
     Market,
     Limit,
     Liquidity,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
+}
+
+impl From<fees::FeePolicy> for FeePolicy {
+    fn from(value: order::FeePolicy) -> Self {
+        match value {
+            order::FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            },
+            order::FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: Quote {
+                    sell_amount: quote.sell.amount.into(),
+                    buy_amount: quote.buy.amount.into(),
+                    fee: quote.fee.amount.into(),
+                },
+            },
+            order::FeePolicy::Volume { factor } => FeePolicy::Volume { factor },
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    #[serde_as(as = "serialize::U256")]
+    pub sell_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    pub buy_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    pub fee: eth::U256,
 }
 
 #[serde_as]

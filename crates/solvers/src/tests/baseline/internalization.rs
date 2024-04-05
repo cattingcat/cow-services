@@ -43,6 +43,7 @@ async fn trusted_token() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -97,10 +98,6 @@ async fn trusted_token() {
                         "outputAmount": "6043910341261930467761"
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 166391,
             }]
         }),
@@ -147,6 +144,7 @@ async fn untrusted_sell_token() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -201,10 +199,6 @@ async fn untrusted_sell_token() {
                         "outputAmount": "6043910341261930467761"
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 166391,
             }]
         }),
@@ -251,6 +245,7 @@ async fn insufficient_balance() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -305,10 +300,6 @@ async fn insufficient_balance() {
                         "outputAmount": "6043910341261930467761"
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 166391,
             }]
         }),

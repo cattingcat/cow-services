@@ -23,9 +23,7 @@
 //! Software (2014)
 
 pub mod liquidity;
-pub mod mempool;
 pub mod quote;
-pub mod score;
 pub mod settlement;
 
 // The [`anyhow::Error`] type is re-exported because the legacy code mostly
@@ -34,7 +32,6 @@ use {crate::infra::blockchain::Ethereum, url::Url};
 pub use {
     anyhow::{Error, Result},
     contracts,
-    mempool::Mempool,
     model::order::OrderData,
     settlement::Settlement,
     shared::ethrpc::Web3,

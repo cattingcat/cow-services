@@ -35,6 +35,7 @@ async fn test() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 },
                 {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
@@ -48,6 +49,7 @@ async fn test() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [
@@ -109,10 +111,6 @@ async fn test() {
                         "outputAmount": "997000"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 259417,
             }]
         }),

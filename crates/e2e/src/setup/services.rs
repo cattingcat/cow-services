@@ -1,16 +1,16 @@
 use {
-    super::{colocation::start_legacy_solver, TestAccount},
+    super::TestAccount,
     crate::setup::{
         colocation::{self, SolverEngine},
         wait_for_condition,
         Contracts,
         TIMEOUT,
     },
+    app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::{H256, U256},
+    ethcontract::H256,
     model::{
-        app_data::{AppDataDocument, AppDataHash},
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
         solver_competition::SolverCompetitionAPI,
@@ -18,7 +18,7 @@ use {
     },
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
-    std::time::Duration,
+    std::{ops::DerefMut, time::Duration},
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -60,6 +60,12 @@ impl ServicesBuilder {
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
         }
     }
+}
+
+#[derive(Default)]
+pub struct ExtraServiceArgs {
+    pub api: Vec<String>,
+    pub autopilot: Vec<String>,
 }
 
 /// Wrapper over offchain services.
@@ -104,11 +110,6 @@ impl<'a> Services<'a> {
             "--network-block-interval=1s".to_string(),
             "--solver-competition-auth=super_secret_key".to_string(),
             format!(
-                "--custom-univ2-baseline-sources={:?}|{:?}",
-                self.contracts.uniswap_v2_router.address(),
-                self.contracts.default_pool_code(),
-            ),
-            format!(
                 "--settlement-contract-address={:?}",
                 self.contracts.gp_settlement.address()
             ),
@@ -126,7 +127,7 @@ impl<'a> Services<'a> {
     /// (note: specifying a larger solve deadline will impact test times as the
     /// driver delays the submission of the solution until shortly before the
     /// deadline in case the solution would start to revert at some point)
-    pub fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
+    pub async fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
 
         let args = [
@@ -143,6 +144,7 @@ impl<'a> Services<'a> {
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(autopilot::run(args));
+        self.wait_until_autopilot_ready().await;
     }
 
     /// Start the api service in a background tasks.
@@ -168,6 +170,11 @@ impl<'a> Services<'a> {
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
+        self.start_protocol_with_args(Default::default(), solver)
+            .await;
+    }
+
+    pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
         let solver_endpoint =
             colocation::start_baseline_solver(self.contracts.weth.address()).await;
         colocation::start_driver(
@@ -177,67 +184,94 @@ impl<'a> Services<'a> {
                 account: solver,
                 endpoint: solver_endpoint,
             }],
+            colocation::LiquidityProvider::UniswapV2,
         );
         self.start_autopilot(
             None,
-            vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-        );
-        self.start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+            [
+                vec![
+                    "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                        .to_string(),
+                ],
+                args.autopilot,
+            ]
+            .concat(),
+        )
+        .await;
+        self.start_api(
+            [
+                vec![
+                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                        .to_string(),
+                ],
+                args.api,
+            ]
+            .concat(),
+        )
         .await;
     }
 
-    /// Starts a basic version of the protocol with a single legacy solver and
-    /// quoter.
-    pub async fn start_protocol_legacy_solver(
+    /// Starts a basic version of the protocol with a single external solver.
+    /// Optionally starts a baseline solver and uses it for price estimation.
+    pub async fn start_protocol_external_solver(
         &self,
         solver: TestAccount,
         solver_endpoint: Option<Url>,
-        quoter_endpoint: Option<Url>,
-        chain_id: Option<U256>,
+        run_baseline: bool,
     ) {
         let external_solver_endpoint =
-            solver_endpoint.unwrap_or("http://localhost:8000/solve".parse().unwrap());
-        let colocated_solver_endpoint =
-            start_legacy_solver(external_solver_endpoint, chain_id).await;
+            solver_endpoint.unwrap_or("http://localhost:8000/".parse().unwrap());
 
-        let external_quoter_endpoint =
-            quoter_endpoint.unwrap_or("http://localhost:8000/quote".parse().unwrap());
-        let colocated_quoter_endpoint =
-            start_legacy_solver(external_quoter_endpoint, chain_id).await;
+        let mut solvers = vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver.clone(),
+            endpoint: external_solver_endpoint,
+        }];
+
+        let (autopilot_args, api_args) = if run_baseline {
+            let baseline_solver_endpoint =
+                colocation::start_baseline_solver(self.contracts.weth.address()).await;
+
+            solvers.push(SolverEngine {
+                name: "baseline_solver".into(),
+                account: solver,
+                endpoint: baseline_solver_endpoint,
+            });
+
+            // Here we call the baseline_solver "test_quoter" to make the native price
+            // estimation use the baseline_solver instead of the test_quoter
+            let autopilot_args = vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+            ];
+            let api_args = vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+            ];
+            (autopilot_args, api_args)
+        } else {
+            let autopilot_args = vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ];
+
+            let api_args = vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ];
+            (autopilot_args, api_args)
+        };
 
         colocation::start_driver(
             self.contracts,
-            vec![
-                SolverEngine {
-                    name: "test_solver".into(),
-                    account: solver.clone(),
-                    endpoint: colocated_solver_endpoint,
-                },
-                SolverEngine {
-                    name: "test_quoter".into(),
-                    account: solver,
-                    endpoint: colocated_quoter_endpoint,
-                },
-            ],
+            solvers,
+            colocation::LiquidityProvider::UniswapV2,
         );
-        self.start_autopilot(
-            Some(Duration::from_secs(11)),
-            vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
-                    .to_string(),
-            ],
-        );
-        self.start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
-        ])
-        .await;
+
+        self.start_autopilot(Some(Duration::from_secs(11)), autopilot_args)
+            .await;
+        self.start_api(api_args).await;
     }
 
     async fn wait_for_api_to_come_up() {
@@ -251,6 +285,21 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
+    }
+
+    async fn wait_until_autopilot_ready(&self) {
+        let is_up = || async {
+            let mut db = self.db.acquire().await.unwrap();
+            const QUERY: &str = "SELECT COUNT(*) FROM auctions";
+            let count: i64 = sqlx::query_scalar(QUERY)
+                .fetch_one(db.deref_mut())
+                .await
+                .unwrap();
+            count > 0
+        };
+        wait_for_condition(TIMEOUT, is_up)
+            .await
+            .expect("waiting for autopilot timed out");
     }
 
     pub async fn get_auction(&self) -> dto::AuctionWithId {

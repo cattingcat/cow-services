@@ -1,10 +1,9 @@
 use {
     crate::{
-        domain::{auction, eth, liquidity, order, solution, Risk},
+        domain::{auction, eth, liquidity, order},
         util,
     },
     ethereum_types::{Address, U256},
-    shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::{collections::HashMap, slice},
 };
 
@@ -24,7 +23,6 @@ pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
-    pub score: Score,
     pub gas: Option<eth::Gas>,
 }
 
@@ -34,25 +32,11 @@ impl Solution {
         Self { id, ..self }
     }
 
-    /// Returns `self` with a new score.
-    pub fn with_score(self, score: Score) -> Self {
-        Self { score, ..self }
-    }
-
-    /// Sets the provided gas and computes the risk adjusted score accordingly.
-    pub fn with_risk_adjusted_score(
-        self,
-        risk: &Risk,
-        gas: eth::Gas,
-        gas_price: auction::GasPrice,
-    ) -> Self {
-        let nmb_orders = self.trades.len();
-        let scored = self.with_score(Score::RiskAdjusted(SuccessProbability(
-            risk.success_probability(gas, gas_price, nmb_orders),
-        )));
+    /// Sets the provided gas.
+    pub fn with_gas(self, gas: eth::Gas) -> Self {
         Self {
             gas: Some(gas),
-            ..scored
+            ..self
         }
     }
 
@@ -135,28 +119,24 @@ pub struct Single {
     pub output: eth::Asset,
     /// The swap interactions for the single order settlement.
     pub interactions: Vec<Interaction>,
-    /// The estimated gas needed for swapping the sell amount to buy amount.
+    /// The estimated gas needed for the solution settling this single order.
     pub gas: eth::Gas,
 }
 
 impl Single {
-    /// An approximation for the overhead of executing a trade in a settlement.
-    const SETTLEMENT_OVERHEAD: u64 = 106_391;
-
     /// Creates a full solution for a single order solution given gas and sell
     /// token prices.
     pub fn into_solution(
         self,
         gas_price: auction::GasPrice,
         sell_token: Option<auction::Price>,
-        score: solution::Score,
     ) -> Option<Solution> {
         let Self {
             order,
             input,
             output,
             interactions,
-            gas: swap,
+            gas,
         } = self;
 
         if (order.sell.token, order.buy.token) != (input.token, output.token) {
@@ -169,13 +149,7 @@ impl Single {
             // full order fee as well as a solver computed fee. Note that this
             // is fine for now, since there is no way to create limit orders
             // with non-zero fees.
-            Fee::Surplus(
-                sell_token?.ether_value(eth::Ether(
-                    swap.0
-                        .checked_add(Self::SETTLEMENT_OVERHEAD.into())?
-                        .checked_mul(gas_price.0 .0)?,
-                ))?,
-            )
+            Fee::Surplus(sell_token?.ether_value(eth::Ether(gas.0.checked_mul(gas_price.0 .0)?))?)
         } else {
             Fee::Protocol
         };
@@ -223,8 +197,7 @@ impl Single {
             ]),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
-            score,
-            gas: Some(self.gas + eth::Gas(SETTLEMENT_OVERHEAD.into())),
+            gas: Some(gas),
         })
     }
 }
@@ -398,34 +371,6 @@ pub struct CustomInteraction {
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,
-}
-
-/// Represents the probability that a solution will be successfully settled.
-#[derive(Debug, Copy, Clone)]
-pub struct SuccessProbability(pub f64);
-
-impl From<f64> for SuccessProbability {
-    fn from(value: f64) -> Self {
-        Self(value)
-    }
-}
-
-/// A score for a solution. The score is used to rank solutions.
-#[derive(Debug, Clone)]
-pub enum Score {
-    /// The score value is provided as is from solver.
-    /// Success probability is not incorporated into this value.
-    Solver(U256),
-    /// This option is used to indicate that the solver did not provide a score.
-    /// Instead, the score should be computed by the protocol given the success
-    /// probability.
-    RiskAdjusted(SuccessProbability),
-}
-
-impl Default for Score {
-    fn default() -> Self {
-        Self::RiskAdjusted(SuccessProbability(1.0))
-    }
 }
 
 // initial tx gas used to call the settle function from the settlement contract

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain,
+        domain::{self},
         infra::{self, banned},
     },
     anyhow::Result,
@@ -80,7 +80,7 @@ pub struct SolvableOrdersCache {
     metrics: &'static Metrics,
     weth: H160,
     limit_order_price_factor: BigDecimal,
-    protocol_fee: domain::ProtocolFee,
+    protocol_fees: domain::ProtocolFees,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -104,7 +104,7 @@ impl SolvableOrdersCache {
         update_interval: Duration,
         weth: H160,
         limit_order_price_factor: BigDecimal,
-        protocol_fee: domain::ProtocolFee,
+        protocol_fees: domain::ProtocolFees,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -121,7 +121,7 @@ impl SolvableOrdersCache {
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             weth,
             limit_order_price_factor,
-            protocol_fee,
+            protocol_fees,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -140,7 +140,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    pub async fn update(&self, block: u64) -> Result<()> {
+    async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
@@ -242,7 +242,7 @@ impl SolvableOrdersCache {
                 .into_iter()
                 .filter_map(|order| {
                     if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
-                        Some(self.protocol_fee.apply(order, quote))
+                        Some(self.protocol_fees.apply(order, quote))
                     } else {
                         tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
                         None
@@ -665,7 +665,11 @@ impl OrderFilterCounter {
             self.orders.remove(order_uid).unwrap();
         }
         if !filtered_orders.is_empty() {
-            tracing::debug!(%reason, orders = ?filtered_orders, "filtered orders");
+            tracing::debug!(
+                %reason,
+                count = filtered_orders.len(),
+                orders = ?filtered_orders, "filtered orders"
+            );
         }
         filtered_orders.into_keys().collect()
     }

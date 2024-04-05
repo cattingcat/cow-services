@@ -8,7 +8,7 @@ mod notification;
 pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
 use {
     super::simulator,
-    crate::domain::{competition::score, eth, mempools::Error},
+    crate::domain::{eth, mempools::Error},
 };
 
 pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {
@@ -26,43 +26,23 @@ pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution
 pub fn scoring_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: Option<solution::Id>,
-    err: &score::Error,
+    solution_id: &solution::Id,
+    err: &solution::error::Scoring,
 ) {
-    if solution_id.is_none() {
-        return;
-    }
-
     let notification = match err {
-        score::Error::ZeroScore => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
+        solution::error::Scoring::Solution(solution::error::Solution::InvalidClearingPrices) => {
+            notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
         }
-        score::Error::ScoreHigherThanQuality(score, quality) => notification::Kind::ScoringFailed(
-            notification::ScoreKind::ScoreHigherThanQuality(*score, *quality),
-        ),
-        score::Error::RiskAdjusted(score::risk::Error::SuccessProbabilityOutOfRange(
-            success_probability,
-        )) => notification::Kind::ScoringFailed(
-            notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
-        ),
-        score::Error::RiskAdjusted(score::risk::Error::ObjectiveValueNonPositive(
-            quality,
-            gas_cost,
-        )) => notification::Kind::ScoringFailed(
-            notification::ScoreKind::ObjectiveValueNonPositive(*quality, *gas_cost),
-        ),
-        score::Error::RiskAdjusted(score::risk::Error::Boundary(_)) => return,
-        score::Error::Boundary(_) => return,
-        score::Error::Scoring(_) => return, // TODO: should we notify?
+        _ => return,
     };
 
-    solver.notify(auction_id, solution_id, notification);
+    solver.notify(auction_id, Some(solution_id.clone()), notification);
 }
 
 pub fn encoding_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: &solution::Id,
     err: &solution::Error,
 ) {
     let notification = match err {
@@ -80,15 +60,19 @@ pub fn encoding_failed(
         }
         solution::Error::FailingInternalization => return,
         solution::Error::DifferentSolvers => return,
+        solution::Error::GasLimitExceeded(used, limit) => notification::Kind::DriverError(format!(
+            "Settlement gas limit exceeded: used {}, limit {}",
+            used.0, limit.0
+        )),
     };
 
-    solver.notify(auction_id, Some(solution_id), notification);
+    solver.notify(auction_id, Some(solution_id.clone()), notification);
 }
 
 pub fn simulation_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: &solution::Id,
     err: &simulator::Error,
     succeeded_at_least_once: SimulationSucceededAtLeastOnce,
 ) {
@@ -100,19 +84,15 @@ pub fn simulation_failed(
         ),
         simulator::Error::Other(error) => notification::Kind::DriverError(error.to_string()),
     };
-    solver.notify(auction_id, Some(solution_id), kind);
+    solver.notify(auction_id, Some(solution_id.clone()), kind);
 }
 
 pub fn executed(
     solver: &Solver,
     auction_id: auction::Id,
-    solution_id: Option<solution::Id>,
+    solution_id: &solution::Id,
     res: &Result<eth::TxId, Error>,
 ) {
-    if solution_id.is_none() {
-        return;
-    };
-
     let kind = match res {
         Ok(hash) => notification::Settlement::Success(hash.clone()),
         Err(Error::Revert(hash)) => notification::Settlement::Revert(hash.clone()),
@@ -122,7 +102,7 @@ pub fn executed(
 
     solver.notify(
         Some(auction_id),
-        solution_id,
+        Some(solution_id.clone()),
         notification::Kind::Settled(kind),
     );
 }
@@ -130,11 +110,11 @@ pub fn executed(
 pub fn duplicated_solution_id(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: &solution::Id,
 ) {
     solver.notify(
         auction_id,
-        Some(solution_id),
+        Some(solution_id.clone()),
         notification::Kind::DuplicatedSolutionId,
     );
 }

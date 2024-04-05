@@ -6,7 +6,11 @@ use {
         domain::{competition::order, eth, time},
         infra::{
             self,
-            config::file::{default_http_time_buffer, default_solving_share_of_deadline},
+            config::file::{
+                default_http_time_buffer,
+                default_solving_share_of_deadline,
+                FeeHandler,
+            },
         },
         tests::{
             cases::{
@@ -17,21 +21,18 @@ use {
                 DEFAULT_POOL_AMOUNT_B,
                 DEFAULT_POOL_AMOUNT_C,
                 DEFAULT_POOL_AMOUNT_D,
-                DEFAULT_SCORE_MAX,
-                DEFAULT_SCORE_MIN,
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
             setup::blockchain::Blockchain,
         },
-        util::{self, serialize},
+        util::{self},
     },
     bigdecimal::FromPrimitive,
     ethcontract::{dyns::DynTransport, BlockId},
     futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
-    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
@@ -59,26 +60,6 @@ pub enum Partial {
     Yes {
         executed: eth::U256,
     },
-}
-
-#[serde_as]
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum Score {
-    Solver {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
-    },
-    #[serde(rename_all = "camelCase")]
-    RiskAdjusted { success_probability: f64 },
-}
-
-impl Default for Score {
-    fn default() -> Self {
-        Self::RiskAdjusted {
-            success_probability: 1.0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -315,8 +296,8 @@ pub struct Solver {
     slippage: infra::solver::Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
-    /// Datetime when the CIP38 rank by surplus rules should be activated.
-    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Determines whether the `solver` or the `driver` handles the fees
+    fee_handler: FeeHandler,
 }
 
 pub fn test_solver() -> Solver {
@@ -336,7 +317,7 @@ pub fn test_solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
-        rank_by_surplus_date: None,
+        fee_handler: FeeHandler::default(),
     }
 }
 
@@ -366,11 +347,9 @@ impl Solver {
         Self { balance, ..self }
     }
 
-    pub fn rank_by_surplus_date(self, rank_by_surplus_date: chrono::DateTime<chrono::Utc>) -> Self {
-        Self {
-            rank_by_surplus_date: Some(rank_by_surplus_date),
-            ..self
-        }
+    pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
+        self.fee_handler = fee_handler;
+        self
     }
 }
 
@@ -473,6 +452,7 @@ pub fn setup() -> Setup {
         enable_simulation: true,
         settlement_address: Default::default(),
         mempools: vec![Mempool::Public],
+        rpc_args: vec!["--gas-limit".into(), "10000000".into()],
     }
 }
 
@@ -494,6 +474,8 @@ pub struct Setup {
     settlement_address: Option<eth::H160>,
     /// Via which mempool the solutions should be submitted
     mempools: Vec<Mempool>,
+    /// Extra configuration for the RPC node
+    rpc_args: Vec<String>,
 }
 
 /// The validity of a solution.
@@ -514,7 +496,6 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    pub score: Score,
 }
 
 impl Solution {
@@ -556,11 +537,6 @@ impl Solution {
             ..self
         }
     }
-
-    /// Set the solution score to the specified value.
-    pub fn score(self, score: Score) -> Self {
-        Self { score, ..self }
-    }
 }
 
 impl Default for Solution {
@@ -570,7 +546,6 @@ impl Default for Solution {
                 additional_bytes: 0,
             },
             orders: Default::default(),
-            score: Default::default(),
         }
     }
 }
@@ -616,7 +591,6 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
-        score: Default::default(),
     }
 }
 
@@ -648,7 +622,6 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
-        score: Default::default(),
     }
 }
 
@@ -679,7 +652,6 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
-        score: Default::default(),
     }
 }
 
@@ -751,6 +723,11 @@ impl Setup {
         self
     }
 
+    pub fn rpc_args(mut self, rpc_args: Vec<String>) -> Self {
+        self.rpc_args = rpc_args;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -787,6 +764,7 @@ impl Setup {
             trader_secret_key,
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
+            rpc_args: self.rpc_args,
         })
         .await;
         let mut solutions = Vec::new();
@@ -810,6 +788,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
+                fee_handler: solver.fee_handler,
             })
             .await;
 
@@ -1070,25 +1049,6 @@ impl<'a> SolveOk<'a> {
         assert!(solution.get("score").is_some());
         let score = solution.get("score").unwrap().as_str().unwrap();
         eth::U256::from_dec_str(score).unwrap()
-    }
-
-    /// Ensure that the score in the response is within a certain range. The
-    /// reason why this is a range is because small timing differences in
-    /// the test can lead to the settlement using slightly different amounts
-    /// of gas, which in turn leads to different scores.
-    pub fn score_in_range(self, min: eth::U256, max: eth::U256) -> Self {
-        let score = self.score();
-        assert!(score >= min, "score less than min {score} < {min}");
-        assert!(score <= max, "score more than max {score} > {max}");
-        self
-    }
-
-    /// Ensure that the score is within the default expected range.
-    pub fn default_score(self) -> Self {
-        self.score_in_range(
-            DEFAULT_SCORE_MIN.ether().into_wei(),
-            DEFAULT_SCORE_MAX.ether().into_wei(),
-        )
     }
 
     /// Ensures that `/solve` returns no solutions.

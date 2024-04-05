@@ -52,21 +52,25 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             account: solver,
             endpoint: solver_endpoint,
         }],
+        colocation::LiquidityProvider::UniswapV2,
     );
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(
-        None,
-        vec![
-            format!(
-                "--trusted-tokens={weth:#x},{token_a:#x},{token_b:#x}",
-                weth = onchain.contracts().weth.address(),
-                token_a = token_a.address(),
-                token_b = token_b.address()
-            ),
-            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ],
-    );
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--trusted-tokens={weth:#x},{token_a:#x},{token_b:#x}",
+                    weth = onchain.contracts().weth.address(),
+                    token_a = token_a.address(),
+                    token_b = token_b.address()
+                ),
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
@@ -77,7 +81,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(9),
-        fee_amount: to_wei(1),
         buy_token: token_b.address(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,

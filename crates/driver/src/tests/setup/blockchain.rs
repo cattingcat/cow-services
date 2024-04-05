@@ -1,5 +1,5 @@
 use {
-    super::{Asset, Order, Partial, Score},
+    super::{Asset, Order, Partial},
     crate::{
         domain::{
             competition::order,
@@ -89,7 +89,6 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub fulfillments: Vec<Fulfillment>,
-    pub score: Score,
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +163,7 @@ pub struct Config {
     pub trader_secret_key: SecretKey,
     pub solvers: Vec<super::Solver>,
     pub settlement_address: Option<eth::H160>,
+    pub rpc_args: Vec<String>,
 }
 
 impl Blockchain {
@@ -175,7 +175,7 @@ impl Blockchain {
         // should be happening from the primary_account of the node, will do this
         // later
 
-        let node = Node::new().await;
+        let node = Node::new(&config.rpc_args).await;
         let web3 = Web3::new(DynTransport::new(
             web3::transports::Http::new(&node.url()).expect("valid URL"),
         ));
@@ -724,10 +724,7 @@ impl Blockchain {
                 ],
             });
         }
-        Solution {
-            fulfillments,
-            score: solution.score.clone(),
-        }
+        Solution { fulfillments }
     }
 
     /// Returns the address of the token with the given symbol.
@@ -772,7 +769,7 @@ impl std::fmt::Debug for Node {
 
 impl Node {
     /// Spawn a new node instance.
-    async fn new() -> Self {
+    async fn new(extra_args: &[String]) -> Self {
         use tokio::io::AsyncBufReadExt as _;
 
         // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
@@ -784,8 +781,7 @@ impl Node {
             .arg("0") // use 0 to let `anvil` use any open port
             .arg("--balance")
             .arg("1000000")
-            .arg("--gas-limit")
-            .arg("30000000")
+            .args(extra_args)
             .stdout(std::process::Stdio::piped())
             .spawn()
             .unwrap();

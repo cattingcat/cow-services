@@ -152,7 +152,6 @@ impl Auction {
             }),
             time::Deadline::new(self.deadline, timeouts),
             eth,
-            self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
         )
         .await
         .map_err(Into::into)
@@ -169,8 +168,6 @@ pub enum Error {
     InvalidTokens,
     #[error("invalid order amounts in auction")]
     InvalidAmounts,
-    #[error("zero score cap")]
-    ZeroScoreCap,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[source] crate::infra::blockchain::Error),
 }
@@ -200,8 +197,6 @@ pub struct Auction {
     tokens: Vec<Token>,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
-    #[serde_as(as = "serialize::U256")]
-    score_cap: eth::U256,
 }
 
 impl Auction {

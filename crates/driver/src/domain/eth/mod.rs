@@ -11,7 +11,7 @@ mod gas;
 pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
-    gas::{EffectiveGasPrice, FeePerGas, Gas, GasCost, GasPrice},
+    gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
 };
@@ -332,6 +332,12 @@ impl num::Zero for Ether {
 
     fn is_zero(&self) -> bool {
         self.0.is_zero()
+    }
+}
+
+impl std::iter::Sum for Ether {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(num::Zero::zero(), std::ops::Add::add)
     }
 }
 

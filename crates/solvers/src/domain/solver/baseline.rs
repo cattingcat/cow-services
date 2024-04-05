@@ -33,6 +33,7 @@ pub struct Config {
     pub max_hops: usize,
     pub max_partial_attempts: usize,
     pub risk: domain::Risk,
+    pub solution_gas_offset: eth::SignedGas,
 }
 
 struct Inner {
@@ -59,6 +60,10 @@ struct Inner {
 
     /// Parameters used to calculate the revert risk of a solution.
     risk: domain::Risk,
+
+    /// Units of gas that get added to the gas estimate for executing a
+    /// computed trade route to arrive at a gas estimate for a whole settlement.
+    solution_gas_offset: eth::SignedGas,
 }
 
 impl Baseline {
@@ -70,6 +75,7 @@ impl Baseline {
             max_hops: config.max_hops,
             max_partial_attempts: config.max_partial_attempts,
             risk: config.risk,
+            solution_gas_offset: config.solution_gas_offset,
         }))
     }
 
@@ -153,10 +159,7 @@ impl Inner {
                     output.amount = cmp::min(output.amount, order.buy.amount);
                 }
 
-                let score = solution::Score::RiskAdjusted(solution::SuccessProbability(
-                    self.risk
-                        .success_probability(route.gas(), auction.gas_price, 1),
-                ));
+                let gas = route.gas() + self.solution_gas_offset;
 
                 Some(
                     solution::Single {
@@ -164,9 +167,9 @@ impl Inner {
                         input: route.input(),
                         output,
                         interactions,
-                        gas: route.gas(),
+                        gas,
                     }
-                    .into_solution(auction.gas_price, sell_token, score)?
+                    .into_solution(auction.gas_price, sell_token)?
                     .with_id(solution::Id(i as u64))
                     .with_buffers_internalizations(&auction.tokens),
                 )
