@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth, liquidity},
+        domain::{competition::{self, order}, eth, liquidity},
         infra::{solver::Config, Solver},
         util::{serialize, Bytes},
     },
@@ -11,7 +11,7 @@ use {
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         DomainSeparator,
     },
-    serde::Deserialize,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
 };
@@ -222,83 +222,83 @@ impl Solutions {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solutions {
-    solutions: Vec<Solution>,
+    pub solutions: Vec<Solution>,
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solution {
-    id: u64,
+    pub id: u64,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
-    prices: HashMap<eth::H160, eth::U256>,
-    trades: Vec<Trade>,
+    pub prices: HashMap<eth::H160, eth::U256>,
+    pub trades: Vec<Trade>,
     #[serde(default)]
-    pre_interactions: Vec<InteractionData>,
-    interactions: Vec<Interaction>,
+    pub pre_interactions: Vec<InteractionData>,
+    pub interactions: Vec<Interaction>,
     #[serde(default)]
-    post_interactions: Vec<InteractionData>,
+    pub post_interactions: Vec<InteractionData>,
     // TODO: remove this once all solvers are updated to not return the score
     // https://github.com/cowprotocol/services/issues/2588
     #[allow(dead_code)]
-    score: Option<Score>,
-    gas: Option<u64>,
+    pub score: Option<Score>,
+    pub gas: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
-enum Trade {
+pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Fulfillment {
+pub struct Fulfillment {
     #[serde_as(as = "serialize::Hex")]
-    order: [u8; order::UID_LEN],
+    pub order: [u8; order::UID_LEN],
     #[serde_as(as = "serialize::U256")]
-    executed_amount: eth::U256,
+    pub executed_amount: eth::U256,
     #[serde_as(as = "Option<serialize::U256>")]
-    fee: Option<eth::U256>,
+    pub fee: Option<eth::U256>,
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct JitTrade {
-    order: JitOrder,
+pub struct JitTrade {
+  pub order: JitOrder,
     #[serde_as(as = "serialize::U256")]
-    executed_amount: eth::U256,
+    pub executed_amount: eth::U256,
     #[serde(default)]
     #[serde_as(as = "serialize::U256")]
-    fee: eth::U256,
+    pub fee: eth::U256,
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct JitOrder {
-    sell_token: eth::H160,
-    buy_token: eth::H160,
-    receiver: eth::H160,
+pub struct JitOrder {
+    pub sell_token: eth::H160,
+    pub buy_token: eth::H160,
+    pub receiver: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    sell_amount: eth::U256,
+    pub sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    buy_amount: eth::U256,
-    valid_to: u32,
+    pub buy_amount: eth::U256,
+    pub valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
-    app_data: [u8; order::APP_DATA_LEN],
-    kind: Kind,
-    sell_token_balance: SellTokenBalance,
-    buy_token_balance: BuyTokenBalance,
-    signing_scheme: SigningScheme,
+    pub app_data: [u8; order::APP_DATA_LEN],
+    pub kind: Kind,
+    pub sell_token_balance: SellTokenBalance,
+    pub buy_token_balance: BuyTokenBalance,
+    pub signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
-    signature: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 impl JitOrder {
@@ -379,89 +379,89 @@ impl JitOrder {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-enum Kind {
+pub enum Kind {
     Sell,
     Buy,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
-enum Interaction {
+pub enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct LiquidityInteraction {
-    internalize: bool,
+pub struct LiquidityInteraction {
+    pub internalize: bool,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    id: usize,
-    input_token: eth::H160,
-    output_token: eth::H160,
+    pub id: usize,
+    pub input_token: eth::H160,
+    pub output_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    input_amount: eth::U256,
+    pub input_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    output_amount: eth::U256,
+    pub output_amount: eth::U256,
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CustomInteraction {
-    internalize: bool,
-    target: eth::H160,
+pub struct CustomInteraction {
+    pub internalize: bool,
+    pub target: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    value: eth::U256,
+    pub value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
-    call_data: Vec<u8>,
-    allowances: Vec<Allowance>,
-    inputs: Vec<Asset>,
-    outputs: Vec<Asset>,
+    pub call_data: Vec<u8>,
+    pub allowances: Vec<Allowance>,
+    pub inputs: Vec<Asset>,
+    pub outputs: Vec<Asset>,
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Asset {
-    token: eth::H160,
+pub struct Asset {
+    pub token: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    amount: eth::U256,
+    pub amount: eth::U256,
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Allowance {
-    token: eth::H160,
-    spender: eth::H160,
+pub struct Allowance {
+    pub token: eth::H160,
+    pub spender: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    amount: eth::U256,
+    pub amount: eth::U256,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-enum SellTokenBalance {
+pub enum SellTokenBalance {
     #[default]
     Erc20,
     Internal,
     External,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-enum BuyTokenBalance {
+pub enum BuyTokenBalance {
     #[default]
     Erc20,
     Internal,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-enum SigningScheme {
+pub enum SigningScheme {
     Eip712,
     EthSign,
     PreSign,
@@ -469,7 +469,7 @@ enum SigningScheme {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, tag = "kind")]
 pub enum Score {
     Solver {

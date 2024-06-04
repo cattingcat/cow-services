@@ -1,12 +1,8 @@
 use {
     crate::{
         domain::{
-            competition,
-            competition::{
-                order,
-                order::{fees, signature::Scheme, Side},
-            },
-            eth::{self},
+            competition::{self, order::{self, fees, signature::Scheme, Side}},
+            eth,
             liquidity,
         },
         infra::{config::file::FeeHandler, solver::ManageNativeToken},
@@ -21,7 +17,7 @@ use {
         interaction::InteractionData,
         order::{BuyTokenDestination, SellTokenSource},
     },
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::{BTreeMap, HashMap},
 };
@@ -319,57 +315,57 @@ impl Auction {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    id: Option<String>,
-    tokens: HashMap<eth::H160, Token>,
-    orders: Vec<Order>,
-    liquidity: Vec<Liquidity>,
+    pub id: Option<String>,
+    pub tokens: HashMap<eth::H160, Token>,
+    pub orders: Vec<Order>,
+    pub liquidity: Vec<Liquidity>,
     #[serde_as(as = "serialize::U256")]
-    effective_gas_price: eth::U256,
-    deadline: chrono::DateTime<chrono::Utc>,
-    surplus_capturing_jit_order_owners: Vec<eth::H160>,
+    pub effective_gas_price: eth::U256,
+    pub deadline: chrono::DateTime<chrono::Utc>,
+    pub surplus_capturing_jit_order_owners: Vec<eth::H160>,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct Order {
+pub struct Order {
     #[serde_as(as = "serialize::Hex")]
-    uid: [u8; order::UID_LEN],
-    sell_token: eth::H160,
-    buy_token: eth::H160,
+    pub uid: [u8; order::UID_LEN],
+    pub sell_token: eth::H160,
+    pub buy_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    sell_amount: eth::U256,
+    pub sell_amount: eth::U256,
     /// Original order `buy amount`
     #[serde_as(as = "serialize::U256")]
-    full_buy_amount: eth::U256,
+    pub full_buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    buy_amount: eth::U256,
+    pub buy_amount: eth::U256,
     /// Original order `sell amount`
     #[serde_as(as = "serialize::U256")]
-    full_sell_amount: eth::U256,
+    pub full_sell_amount: eth::U256,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fee_policies: Option<Vec<FeePolicy>>,
-    valid_to: u32,
-    kind: Kind,
+    pub fee_policies: Option<Vec<FeePolicy>>,
+    pub valid_to: u32,
+    pub kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
-    receiver: Option<eth::H160>,
-    owner: eth::H160,
-    partially_fillable: bool,
-    pre_interactions: Vec<InteractionData>,
-    post_interactions: Vec<InteractionData>,
-    sell_token_source: SellTokenSource,
-    buy_token_destination: BuyTokenDestination,
-    class: Class,
-    app_data: AppDataHash,
-    signing_scheme: SigningScheme,
+    pub receiver: Option<eth::H160>,
+    pub owner: eth::H160,
+    pub partially_fillable: bool,
+    pub pre_interactions: Vec<InteractionData>,
+    pub post_interactions: Vec<InteractionData>,
+    pub sell_token_source: SellTokenSource,
+    pub buy_token_destination: BuyTokenDestination,
+    pub class: Class,
+    pub app_data: AppDataHash,
+    pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
-    signature: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
     Eip712,
@@ -378,14 +374,14 @@ pub enum SigningScheme {
     PreSign,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 enum Class {
     Market,
@@ -394,7 +390,7 @@ enum Class {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
@@ -438,7 +434,7 @@ impl From<fees::FeePolicy> for FeePolicy {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "serialize::U256")]
@@ -450,23 +446,23 @@ pub struct Quote {
 }
 
 #[serde_as]
-#[derive(Default, Debug, Serialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct Token {
-    decimals: Option<u8>,
-    symbol: Option<String>,
+pub struct Token {
+    pub decimals: Option<u8>,
+    pub symbol: Option<String>,
     #[serde_as(as = "Option<serialize::U256>")]
-    reference_price: Option<eth::U256>,
+    pub reference_price: Option<eth::U256>,
     #[serde_as(as = "serialize::U256")]
-    available_balance: eth::U256,
-    trusted: bool,
+    pub available_balance: eth::U256,
+    pub trusted: bool,
 }
 
 // TODO Remove dead_code
 #[allow(dead_code, clippy::enum_variant_names)]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-enum Liquidity {
+pub enum Liquidity {
     ConstantProduct(ConstantProductPool),
     WeightedProduct(WeightedProductPool),
     Stable(StablePool),
@@ -475,56 +471,56 @@ enum Liquidity {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ConstantProductPool {
+pub struct ConstantProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    id: usize,
-    address: eth::H160,
-    router: eth::H160,
+    pub id: usize,
+    pub address: eth::H160,
+    pub router: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
-    tokens: BTreeMap<eth::H160, ConstantProductReserve>,
+    pub gas_estimate: eth::U256,
+    pub tokens: BTreeMap<eth::H160, ConstantProductReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    fee: bigdecimal::BigDecimal,
+    pub fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
-struct ConstantProductReserve {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ConstantProductReserve {
     #[serde_as(as = "serialize::U256")]
-    balance: eth::U256,
+    pub balance: eth::U256,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct WeightedProductPool {
+pub struct WeightedProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    id: usize,
-    address: eth::H160,
-    balancer_pool_id: eth::H256,
+    pub id: usize,
+    pub address: eth::H160,
+    pub balancer_pool_id: eth::H256,
     #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
-    tokens: IndexMap<eth::H160, WeightedProductReserve>,
+    pub gas_estimate: eth::U256,
+    pub tokens: IndexMap<eth::H160, WeightedProductReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    fee: bigdecimal::BigDecimal,
-    version: WeightedProductVersion,
+    pub fee: bigdecimal::BigDecimal,
+    pub version: WeightedProductVersion,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct WeightedProductReserve {
+pub struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
-    balance: eth::U256,
+    pub balance: eth::U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    scaling_factor: bigdecimal::BigDecimal,
+    pub scaling_factor: bigdecimal::BigDecimal,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    weight: bigdecimal::BigDecimal,
+    pub weight: bigdecimal::BigDecimal,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 enum WeightedProductVersion {
     V0,
@@ -532,73 +528,73 @@ enum WeightedProductVersion {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct StablePool {
+pub struct StablePool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    id: usize,
-    address: eth::H160,
-    balancer_pool_id: eth::H256,
+    pub id: usize,
+    pub address: eth::H160,
+    pub balancer_pool_id: eth::H256,
     #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
-    tokens: IndexMap<eth::H160, StableReserve>,
+    pub gas_estimate: eth::U256,
+    pub tokens: IndexMap<eth::H160, StableReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    amplification_parameter: bigdecimal::BigDecimal,
+    pub amplification_parameter: bigdecimal::BigDecimal,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    fee: bigdecimal::BigDecimal,
+    pub fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct StableReserve {
+pub struct StableReserve {
     #[serde_as(as = "serialize::U256")]
-    balance: eth::U256,
+    pub balance: eth::U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    scaling_factor: bigdecimal::BigDecimal,
+    pub scaling_factor: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ConcentratedLiquidityPool {
+pub struct ConcentratedLiquidityPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    id: usize,
-    address: eth::H160,
-    router: eth::H160,
+    pub id: usize,
+    pub address: eth::H160,
+    pub router: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
-    tokens: Vec<eth::H160>,
+    pub gas_estimate: eth::U256,
+    pub tokens: Vec<eth::H160>,
     #[serde_as(as = "serialize::U256")]
-    sqrt_price: eth::U256,
+    pub sqrt_price: eth::U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    liquidity: u128,
-    tick: i32,
+    pub liquidity: u128,
+    pub tick: i32,
     #[serde_as(as = "BTreeMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
-    liquidity_net: BTreeMap<i32, i128>,
+    pub liquidity_net: BTreeMap<i32, i128>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    fee: bigdecimal::BigDecimal,
+    pub fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ForeignLimitOrder {
+pub struct ForeignLimitOrder {
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    id: usize,
-    address: eth::H160,
+    pub id: usize,
+    pub address: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
+    pub gas_estimate: eth::U256,
     #[serde_as(as = "serialize::Hex")]
-    hash: [u8; 32],
-    maker_token: eth::H160,
-    taker_token: eth::H160,
+    pub hash: [u8; 32],
+    pub maker_token: eth::H160,
+    pub taker_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    maker_amount: eth::U256,
+    pub maker_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    taker_amount: eth::U256,
+    pub taker_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    taker_token_fee_amount: eth::U256,
+    pub taker_token_fee_amount: eth::U256,
 }
 
 fn fee_to_decimal(fee: liquidity::balancer::v2::Fee) -> bigdecimal::BigDecimal {
